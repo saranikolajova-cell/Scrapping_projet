@@ -106,3 +106,5 @@ Respect des sites : L'automatisation inclut des délais d'attente pour ne pas su
 
 Données : Les informations extraites ne sont pas stockées de manière persistante ni utilisées à des fins commerciales.
 Données : Les informations extraites ne sont pas stockées de manière persistante ni utilisées à des fins commerciales.
+
+NIKOLAJOVA Sara, TISNES Francesca - M1 APE - SE / DS2E - Université de Strasbourg
