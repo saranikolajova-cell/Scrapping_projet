@@ -57,8 +57,8 @@ PowerShell
 Sur macOS / Linux :
 ```Bash
 source name/bin/activate
-(L'indicateur (name) doit apparaître au début de votre ligne de commande).
 ```
+(L'indicateur (name) doit apparaître au début de votre ligne de commande).
 
 ### 4. Installation des Dépendances
 Installez les bibliothèques requises via le gestionnaire de paquets pip :
