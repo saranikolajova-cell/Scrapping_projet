@@ -36,34 +36,42 @@ Pour garantir le bon fonctionnement des dépendances, l'exécution doit se faire
 Placez-vous dans le dossier de votre projet via votre terminal :
 ```bash
 cd Documents/Programmation
+```
+
 ### 2. Création de l'Environnement Virtuel
 Créez un environnement isolé (nommé ici name) pour installer les paquets sans conflit système :
 
-Bash
+```Bash
 python -m venv name
+```
+
 ### 3. Activation de l'Environnement (Étape Critique)
 L'activation est nécessaire à chaque nouvelle session de travail.
 
 Sur Windows (PowerShell) :
-
+```Bash
 PowerShell
 .\name\Scripts\activate
-Sur macOS / Linux :
+```
 
-Bash
+Sur macOS / Linux :
+```Bash
 source name/bin/activate
 (L'indicateur (name) doit apparaître au début de votre ligne de commande).
+```
 
 ### 4. Installation des Dépendances
 Installez les bibliothèques requises via le gestionnaire de paquets pip :
 
-Bash
+```Bash
 pip install selenium webdriver-manager polars
+```
 GUIDE D'UTILISATION
 Une fois l'environnement activé, exécutez le script principal :
 
-Bash
+```Bash
 python main.py
+```
 Scénario d'Exécution
 Le programme demandera deux informations dans le terminal :
 
@@ -106,6 +114,6 @@ Respect des sites : L'automatisation inclut des délais d'attente pour ne pas su
 
 Données : Les informations extraites ne sont pas stockées de manière persistante ni utilisées à des fins commerciales.
 Données : Les informations extraites ne sont pas stockées de manière persistante ni utilisées à des fins commerciales.
-```
+
 --- 
 NIKOLAJOVA Sara, TISNES Francesca - M1 APE - SE / DS2E - Université de Strasbourg
