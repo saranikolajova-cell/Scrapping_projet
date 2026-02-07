@@ -1,5 +1,5 @@
 """
-TITRE : ESTIMATEUR DE COÛT DE REPAS AUTOMATISÉ (VERSION ROBUSTE)
+TITRE : ESTIMATEUR DE COÛT DE REPAS AUTOMATISÉ
 DESCRIPTION : Ce script croise des données économiques avec des recettes populaires.
 """
 
