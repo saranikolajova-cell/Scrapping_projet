@@ -1,10 +1,19 @@
 """
-TITRE : ESTIMATEUR DE COÛT DE REPAS AUTOMATISÉ
-DESCRIPTION : Ce script croise des données économiques avec des recettes populaires.
+TITRE : COMPARATEUR DE PRIX DE RECETTES (VERSION PRO)
+DESCRIPTION : 
+    Script d'automatisation (Bot) qui :
+    1. Récupère les données économiques d'une ville (Numbeo).
+    2. Cherche des recettes culinaires (Marmiton).
+    3. Estime le coût des ingrédients.
+    4. Génère un rapport HTML comparatif.
+
+AUTEUR : [Votre Nom/Bot]
+DATE : Février 2026
 """
 
 import time
-import polars as pl
+import os
+import polars as pl  # Bibliothèque de manipulation de données (non utilisée ici mais prête pour extension)
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -12,239 +21,360 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# --- 1. BASE DE CONNAISSANCES ---
-CATEGORIES = {
-    "VIANDE_ROUGE": ["boeuf", "bœuf", "steak", "porc", "lard", "jambon", "saucisse", "veau", "agneau", "chorizo", "merguez", "viande", "bacon", "lardon"],
-    "VOLAILLE": ["poulet", "dinde", "canard", "oie", "volaille", "chapon", "cuisse", "blanc de"],
-    "POISSON": ["poisson", "saumon", "thon", "crevette", "moule", "cabillaud", "fruit de mer", "calamar", "truite"],
-    "LEGUME": ["tomate", "oignon", "carotte", "courgette", "aubergine", "poivron", "ail", "échalote", "echalote", "champignon", "salade", "épinard", "haricot", "pois", "pomme de terre", "patate", "chou", "poireau", "avocat", "concombre"],
-    "FRUIT": ["pomme", "poire", "banane", "citron", "orange", "fraise", "framboise", "ananas", "fruit", "zeste"],
-    "FECULENT": ["riz", "pâte", "spaghetti", "nouille", "blé", "semoule", "quinoa", "pain", "baguette", "toast", "farine", "galette", "tortilla"],
-    "LAITIER": ["lait", "crème", "beurre", "yaourt", "fromage", "gruyère", "parmesan", "mozzarella", "comté", "cheddar", "emmental"],
-    "EPICERIE_SUCREE": ["sucre", "miel", "sirop", "chocolat", "cacao", "confiture", "maïzena", "levure", "vanille"],
-    "CONDIMENT": ["sel", "poivre", "huile", "vinaigre", "sauce", "soja", "moutarde", "ketchup", "mayonnaise", "cube", "bouillon", "vin", "alcool", "rhum", "eau"],
-    "AROMATE": ["gingembre", "persil", "basilic", "thym", "laurier", "coriandre", "menthe", "épice", "curry", "paprika", "cumin", "cannelle", "herbe", "piment", "quatre-épices", "origan"]
-}
+# =============================================================================
+# 1. MOTEUR DE NAVIGATEUR (PATTERN: CONTEXT MANAGER)
+# =============================================================================
+class ScraperEngine:
+    """
+    Gère le cycle de vie du navigateur Selenium.
+    Utilise les méthodes __enter__ et __exit__ pour permettre l'utilisation
+    de l'instruction 'with', garantissant la fermeture propre du driver.
+    """
+    def __init__(self):
+        self.driver = None
 
-# --- 2. MODULES DE SCRAPING ---
+    def __enter__(self):
+        """Configuration et lancement du navigateur au début du bloc 'with'."""
+        options = webdriver.ChromeOptions()
+        # Masque les logs techniques inutiles de Chrome dans la console
+        options.add_argument("--log-level=3") 
+        
+        # Installe automatiquement la bonne version du driver Chrome
+        service = Service(ChromeDriverManager().install())
+        self.driver = webdriver.Chrome(service=service, options=options)
+        self.driver.maximize_window()
+        return self.driver
 
-def get_numbeo_prices(driver, city):
-    """Récupère les prix moyens locaux sur Numbeo."""
-    print(f"Connexion à Numbeo pour : {city}...")
-    city_url = city.replace(" ", "-").title() 
-    driver.get(f"https://www.numbeo.com/cost-of-living/in/{city_url}?displayCurrency=EUR")
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Méthode appelée à la fin du bloc 'with'.
+        Ici, on ne ferme pas le driver (pass) pour laisser l'utilisateur voir le résultat.
+        Pour fermer automatiquement, on mettrait : self.driver.quit()
+        """
+        pass 
+
+# =============================================================================
+# 2. LOGIQUE MÉTIER : CLASSIFICATION DES INGRÉDIENTS
+# =============================================================================
+class IngredientClassifier:
+    """
+    Service statique pour catégoriser un ingrédient brut (ex: '2 tomates')
+    dans une famille tarifaire (ex: 'LEGUME').
+    """
     
-    prix_ref = {
-        "base_viande": 15.0, "base_volaille": 10.0, "base_legume": 2.50,
-        "base_feculent": 2.00, "base_laitier": 10.0, "base_fruit": 2.50
+    # Dictionnaire de correspondance : Famille -> Liste de mots-clés
+    CATEGORIES = {
+        "VIANDE_ROUGE": ["boeuf", "bœuf", "steak", "porc", "lard", "jambon", "saucisse", "veau", "agneau", "chorizo", "merguez", "viande", "bacon", "lardon"],
+        "VOLAILLE": ["poulet", "dinde", "canard", "oie", "volaille", "chapon", "cuisse", "blanc de"],
+        "POISSON": ["poisson", "saumon", "thon", "crevette", "moule", "cabillaud", "fruit de mer", "calamar", "truite"],
+        "LEGUME": ["tomate", "oignon", "carotte", "courgette", "aubergine", "poivron", "ail", "échalote", "echalote", "champignon", "salade", "épinard", "haricot", "pois", "pomme de terre", "patate", "chou", "poireau", "avocat", "concombre"],
+        "FRUIT": ["pomme", "poire", "banane", "citron", "orange", "fraise", "framboise", "ananas", "fruit", "zeste"],
+        "FECULENT": ["riz", "pâte", "spaghetti", "nouille", "blé", "semoule", "quinoa", "pain", "baguette", "toast", "farine", "galette", "tortilla"],
+        "LAITIER": ["lait", "crème", "beurre", "yaourt", "fromage", "gruyère", "parmesan", "mozzarella", "comté", "cheddar", "emmental"],
+        "EPICERIE_SUCREE": ["sucre", "miel", "sirop", "chocolat", "cacao", "confiture", "maïzena", "levure", "vanille"],
+        "CONDIMENT": ["sel", "poivre", "huile", "vinaigre", "sauce", "soja", "moutarde", "ketchup", "mayonnaise", "cube", "bouillon", "vin", "alcool", "rhum", "eau"],
+        "AROMATE": ["gingembre", "persil", "basilic", "thym", "laurier", "coriandre", "menthe", "épice", "curry", "paprika", "cumin", "cannelle", "herbe", "piment", "quatre-épices", "origan"]
     }
-    
-    try:
-        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "data_wide_table")))
-        rows = driver.find_elements(By.TAG_NAME, "tr")
-        for row in rows:
-            text = row.text
-            try:
-                element_prix = row.find_element(By.CLASS_NAME, "priceValue")
-                val = float(element_prix.text.replace("€", "").replace(",", "").strip())
-                
-                if "Chicken" in text: prix_ref["base_volaille"] = val
-                elif "Beef" in text: prix_ref["base_viande"] = val
-                elif "Rice" in text: prix_ref["base_feculent"] = val
-                elif "Cheese" in text: prix_ref["base_laitier"] = val
-                elif "Apple" in text or "Orange" in text: prix_ref["base_fruit"] = val
-                elif "Tomato" in text or "Potato" in text or "Onion" in text: 
-                    prix_ref["base_legume"] = (prix_ref["base_legume"] + val) / 2
-            except: continue
-        print("Données économiques locales récupérées.")
-    except:
-        print("Utilisation des prix par défaut (Numbeo inaccessible).")
-    
-    return prix_ref
 
-def get_marmiton_suggestions(driver):
-    """
-    Récupère une liste de recettes via une recherche générique 'Plat principal'.
-    Cette méthode est plus robuste que la page d'accueil.
-    """
-    print("Recherche des recettes populaires...")
-    # On lance une recherche explicite pour être sûr d'avoir des résultats
-    driver.get("https://www.marmiton.org/recettes/recherche.aspx?aqt=plat&st=1")
+    @classmethod
+    def identify(cls, name):
+        """Parcourt les catégories pour trouver une correspondance dans le nom de l'ingrédient."""
+        nom_min = name.lower()
+        for fam, mots in cls.CATEGORIES.items():
+            for mot in mots:
+                if mot in nom_min: return fam
+        return "AUTRE" # Catégorie par défaut si rien n'est trouvé
+
+# =============================================================================
+# 3. SERVICES DE SCRAPING (DONNÉES EXTERNES)
+# =============================================================================
+class NumbeoService:
+    """Récupère le coût de la vie dans une ville spécifique via Numbeo."""
     
-    try:
-        wait = WebDriverWait(driver, 5)
-        cookie = wait.until(EC.element_to_be_clickable((By.ID, "didomi-notice-agree-button")))
-        cookie.click()
-    except: pass
-    
-    recettes = []
-    try:
-        time.sleep(3) 
-        # STRATÉGIE DE SCRAPING UNIVERSELLE :
-        # On cherche tous les liens <a> qui contiennent "/recettes/recette_" dans leur URL.
-        # Cela évite de dépendre d'une classe CSS qui change.
-        liens = driver.find_elements(By.XPATH, "//a[contains(@href, '/recettes/recette_')]")
-        
-        for lien in liens:
-            try:
-                # On cherche le titre (souvent dans un h4 ou h3 à l'intérieur du lien)
-                # On tente h4 d'abord, sinon on prend tout le texte
-                try:
-                    nom = lien.find_element(By.TAG_NAME, "h4").text.strip()
-                except:
-                    nom = lien.text.strip()
-                
-                url = lien.get_attribute("href")
-                
-                # Filtrage : On évite les doublons et les titres vides/bizarres
-                if nom and url and len(nom) > 5 and nom not in [r['nom'] for r in recettes]:
-                    recettes.append({"nom": nom, "url": url})
-                
-                if len(recettes) >= 10: break # On s'arrête à 10 recettes
-            except: continue
+    def __init__(self, driver):
+        self.driver = driver
+        # Prix par défaut au cas où le scraping échoue ou la ville n'existe pas
+        self.base_prices = {
+            "base_viande": 15.0, "base_volaille": 10.0, "base_legume": 2.50, 
+            "base_feculent": 2.00, "base_laitier": 10.0, "base_fruit": 2.50
+        }
+
+    def get_prices(self, city):
+        print(f"[INFO] Recuperation index prix pour : {city}...")
+        try:
+            # Formatage de l'URL pour correspondre au format Numbeo (ex: New-York)
+            self.driver.get(f"https://www.numbeo.com/cost-of-living/in/{city.replace(' ', '-').title()}?displayCurrency=EUR")
             
-    except Exception as e:
-        print(f"Erreur technique récupération recettes : {e}")
-        
-    return recettes
-
-def get_recipe_details(driver, url):
-    """Extrait les ingrédients d'une page recette."""
-    print(f"Analyse des ingrédients...")
-    driver.get(url)
-    
-    ingredients = []
-    try:
-        driver.execute_script("window.scrollTo(0, 600);")
-        time.sleep(2)
-        
-        # On cherche les titres des ingrédients
-        items = driver.find_elements(By.CLASS_NAME, "card-ingredient-title")
-        
-        # Si la méthode 1 échoue, on tente une méthode plus large (certaines pages Marmiton sont différentes)
-        if len(items) == 0:
-             items = driver.find_elements(By.XPATH, "//span[contains(@class, 'ingredient-name')]")
-
-        for item in items:
-            nom = item.text.strip()
-            if nom: ingredients.append(nom)
+            # Attente explicite que le tableau de données soit chargé dans le DOM
+            WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "data_wide_table")))
             
-    except:
-        print("Erreur lecture ingrédients.")
+            rows = self.driver.find_elements(By.TAG_NAME, "tr")
+            for row in rows: self._parse(row)
+        except: 
+            print("[ATTENTION] Impossible de joindre Numbeo ou ville introuvable, utilisation des prix par defaut.")
+        return self.base_prices
+
+    def _parse(self, row):
+        """Analyse une ligne HTML du tableau Numbeo pour extraire le prix."""
+        try:
+            txt = row.text
+            # Extraction et conversion du prix (nettoyage du symbole €)
+            val = float(row.find_element(By.CLASS_NAME, "priceValue").text.replace("€", "").replace(",", "").strip())
+            
+            # Mise à jour des prix de base selon le contenu de la ligne
+            if "Chicken" in txt: self.base_prices["base_volaille"] = val
+            elif "Beef" in txt: self.base_prices["base_viande"] = val
+            elif "Rice" in txt: self.base_prices["base_feculent"] = val
+            elif "Cheese" in txt: self.base_prices["base_laitier"] = val
+            # Moyenne pour les légumes courants
+            elif any(x in txt for x in ["Tomato", "Potato", "Onion"]): 
+                self.base_prices["base_legume"] = (self.base_prices["base_legume"] + val) / 2
+        except: pass
+
+class MarmitonService:
+    """Gère la recherche et l'extraction de recettes sur Marmiton."""
+    
+    def __init__(self, driver):
+        self.driver = driver
+
+    def search_recipes(self, query):
+        print(f"[INFO] Recherche des recettes pour : '{query}'...")
+        self.driver.get(f"https://www.marmiton.org/recettes/recherche.aspx?aqt={query}&st=1")
+        self._cookies() # Gestion de la popup RGPD
         
-    return ingredients
+        recettes = []
+        try:
+            time.sleep(2) # Pause pour laisser le JS s'exécuter
+            
+            # Recherche des liens via XPath (plus robuste que les classes CSS changeantes)
+            liens = self.driver.find_elements(By.XPATH, "//a[contains(@href, '/recettes/recette_')]")
+            
+            for lien in liens:
+                if len(recettes) >= 3: break # Limite à 3 résultats
+                r = self._info(lien)
+                # Évite les doublons
+                if r and r['nom'] not in [x['nom'] for x in recettes]:
+                    recettes.append(r)
+        except: pass
+        return recettes
 
-def identifier_famille(nom_ingredient):
-    """Classification des ingrédients."""
-    nom_min = nom_ingredient.lower()
-    for famille, mots_cles in CATEGORIES.items():
-        for mot in mots_cles:
-            if mot in nom_min:
-                return famille
-    return "AUTRE"
+    def get_ingredients(self, url):
+        """Extrait la liste des ingrédients d'une page recette spécifique."""
+        self.driver.get(url)
+        try:
+            # Scroll nécessaire car certains sites chargent le contenu en "Lazy Loading"
+            self.driver.execute_script("window.scrollTo(0, 600);")
+            time.sleep(1) 
+            
+            # Tentative de récupération avec la classe standard
+            items = self.driver.find_elements(By.CLASS_NAME, "card-ingredient-title")
+            # Fallback (Plan B) si la classe standard ne fonctionne pas
+            if not items: items = self.driver.find_elements(By.XPATH, "//span[contains(@class, 'ingredient-name')]")
+            
+            return [item.text.strip() for item in items if item.text.strip()]
+        except: return []
 
-# --- 3. EXÉCUTION ---
+    def _cookies(self):
+        """Ferme la bannière de cookies si elle apparaît."""
+        try: 
+            WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable((By.ID, "didomi-notice-agree-button"))).click()
+        except: pass
+
+    def _info(self, el):
+        """Extrait le titre et l'URL d'un élément Web recette."""
+        try:
+            url = el.get_attribute("href")
+            # Parfois le titre est dans un h4, parfois c'est le texte du lien
+            nom = el.text.strip() or el.find_element(By.TAG_NAME, "h4").text.strip()
+            if nom and url and len(nom)>5: return {"nom": nom, "url": url}
+        except: pass
+        return None
+
+# =============================================================================
+# 4. MOTEUR DE CALCUL (ESTIMATION)
+# =============================================================================
+class CostCalculator:
+    """Calcule le coût estimatif d'une recette basé sur les prix Numbeo."""
+    
+    def __init__(self, prices):
+        self.prices = prices
+        self.total = 0.0
+
+    def calculate(self, ingredients):
+        self.total = 0.0
+        details = []
+        for ing in ingredients:
+            fam = IngredientClassifier.identify(ing)
+            cost = self._cost(fam)
+            self.total += cost
+            details.append({"Ing": ing, "Cost": cost})
+        return self.total, details
+
+    def _cost(self, fam):
+        """
+        Applique une règle métier heuristique : 
+        Prix unitaire = Prix au kilo (Numbeo) * Quantité estimée moyenne
+        """
+        p = self.prices
+        # Les multiplicateurs (ex: 0.15) correspondent à une portion estimée (ex: 150g)
+        mapping = {
+            "VIANDE_ROUGE": p["base_viande"]*0.15, 
+            "VOLAILLE": p["base_volaille"]*0.15,
+            "POISSON": p["base_viande"]*1.2*0.15, 
+            "LEGUME": p["base_legume"]*0.15,
+            "FECULENT": p["base_feculent"]*0.1, 
+            "LAITIER": p["base_laitier"]*0.05,
+            "EPICERIE_SUCREE": 0.2, # Prix forfaitaire
+            "CONDIMENT": 0.1, 
+            "AROMATE": 0.3
+        }
+        return mapping.get(fam, 0.5) # 0.50€ par défaut pour "AUTRE"
+
+# =============================================================================
+# 5. GÉNÉRATEUR DE RAPPORT (DASHBOARD HTML)
+# =============================================================================
+class DashboardGenerator:
+    """Génère un fichier HTML visuel pour comparer les résultats."""
+    
+    @staticmethod
+    def create_comparison(results, city, dish_name):
+        if not results: return
+        
+        # Identification de la recette la moins chère
+        winner = min(results, key=lambda x: x['total'])
+        
+        cards_html = ""
+        for r in results:
+            is_winner = (r == winner)
+            
+            # Application de styles CSS spécifiques pour le gagnant
+            border_style = "4px solid #27ae60" if is_winner else "1px solid #ddd"
+            bg_color = "#f0fff4" if is_winner else "#fff"
+            badge = '<div class="badge">MEILLEUR PRIX</div>' if is_winner else ""
+            
+            # Formatage de la liste d'ingrédients (tronquée à 6 éléments)
+            ing_html = "".join([f"<li>{d['Ing']}</li>" for d in r['details'][:6]])
+            if len(r['details']) > 6: ing_html += "<li>...</li>"
+
+            # Construction de la "Carte" HTML pour une recette
+            cards_html += f"""
+            <div class="card" style="border: {border_style}; background: {bg_color}">
+                {badge}
+                <h3>{r['nom']}</h3>
+                <div class="price">{r['total']:.2f} €</div>
+                <div class="ing-list">
+                    <strong>Ingredients cles :</strong>
+                    <ul>{ing_html}</ul>
+                </div>
+                <a href="{r['url']}" target="_blank" class="btn">Voir la recette sur Marmiton</a>
+            </div>
+            """
+
+        # Gabarit HTML complet avec CSS intégré
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Comparateur {dish_name}</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; padding: 40px; color: #333; }}
+                h1 {{ text-align: center; color: #2c3e50; margin-bottom: 10px; }}
+                .subtitle {{ text-align: center; color: #7f8c8d; margin-bottom: 40px; }}
+                .container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 30px; }}
+                .card {{ background: white; width: 320px; padding: 25px; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.08); position: relative; transition: transform 0.3s; display: flex; flex-direction: column; justify-content: space-between; }}
+                .card:hover {{ transform: translateY(-5px); }}
+                .badge {{ position: absolute; top: -15px; right: -10px; background: #27ae60; color: white; padding: 8px 15px; border-radius: 20px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2); font-size: 0.9em; }}
+                h3 {{ font-size: 1.1em; height: 50px; overflow: hidden; }}
+                .price {{ font-size: 2.8em; font-weight: 800; color: #2c3e50; margin: 15px 0; text-align: center; }}
+                .ing-list {{ font-size: 0.85em; color: #666; margin-bottom: 20px; }}
+                ul {{ padding-left: 20px; }}
+                .btn {{ display: block; text-align: center; background: #3498db; color: white; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: bold; transition: background 0.2s; }}
+                .btn:hover {{ background: #2980b9; }}
+                .footer {{ text-align: center; margin-top: 50px; font-size: 0.8em; color: #aaa; }}
+            </style>
+        </head>
+        <body>
+            <h1>COMPARATEUR DE PRIX</h1>
+            <div class="subtitle">Analyse pour : <strong>{dish_name.upper()}</strong> a <strong>{city.upper()}</strong></div>
+            
+            <div class="container">
+                {cards_html}
+            </div>
+
+            <div class="footer">
+                Genere automatiquement par Python - Prix bases sur Numbeo - Recettes via Marmiton
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Sauvegarde du fichier
+        filename = f"comparatif_{dish_name.replace(' ', '_')}.html"
+        path = os.path.abspath(filename)
+        with open(path, "w", encoding="utf-8") as f: f.write(html)
+        return path
+
+# =============================================================================
+# 6. POINT D'ENTRÉE PRINCIPAL
+# =============================================================================
+def main():
+    print("\n" + "="*40)
+    print("   COMPARATEUR DE PRIX DE RECETTES")
+    print("="*40 + "\n")
+
+    # 1. Interactions utilisateur (Entrées)
+    ville = input(">> Dans quelle ville faites-vous vos courses ? (ex: Paris, Lyon) : ")
+    plat = input(">> Quel plat voulez-vous cuisiner ? (ex: Lasagnes, Quiche) : ")
+
+    if not ville or not plat:
+        print("[ERREUR] Veuillez entrer une ville et un plat.")
+        return
+
+    print("\n[INFO] Lancement du robot...")
+
+    # Utilisation du ScraperEngine avec 'with' pour garantir la fermeture
+    with ScraperEngine() as driver:
+        
+        # 2. Récupération des données économiques
+        numbeo = NumbeoService(driver)
+        prices = numbeo.get_prices(ville)
+
+        # 3. Recherche des recettes
+        marmiton = MarmitonService(driver)
+        recettes = marmiton.search_recipes(plat)
+
+        if not recettes:
+            print(f"[ERREUR] Aucune recette trouvée pour '{plat}'.")
+            return
+
+        # 4. Analyse et calculs
+        results = []
+        calc = CostCalculator(prices)
+
+        print(f"\n[INFO] Comparaison de {len(recettes)} recettes en cours...")
+        
+        for i, r in enumerate(recettes):
+            print(f"   [{i+1}/{len(recettes)}] Analyse : {r['nom']}...")
+            ing = marmiton.get_ingredients(r['url'])
+            total, details = calc.calculate(ing)
+            
+            results.append({
+                "nom": r['nom'],
+                "url": r['url'],
+                "total": total,
+                "details": details
+            })
+
+        # 5. Génération du rapport
+        print("\n[INFO] Creation du rapport visuel...")
+        path = DashboardGenerator.create_comparison(results, ville, plat)
+        
+        print(f"[SUCCES] Termine ! Le comparatif s'ouvre dans le navigateur...")
+        driver.get(f"file:///{path}")
+        
+        # Pause finale
+        input("\nAppuyez sur Entrée pour fermer le programme...")
 
 if __name__ == "__main__":
-    ville = input("Ville pour l'index économique (ex: Paris) : ")
-
-    options = webdriver.ChromeOptions()
-    options.add_argument("--log-level=3")
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    driver.maximize_window()
-
-    try:
-        # ÉTAPE 1 : Prix
-        prix_marche = get_numbeo_prices(driver, ville)
-
-        # ÉTAPE 2 : Menu
-        mes_recettes = get_marmiton_suggestions(driver)
-
-        if not mes_recettes:
-            print("Aucune recette trouvée. Le site a peut-être changé de structure.")
-        else:
-            print("\n--- SÉLECTION DU MENU ---")
-            for i, r in enumerate(mes_recettes):
-                print(f"{i+1}. {r['nom']}")
-            
-            while True:
-                try:
-                    choix_index = int(input(f"\nNuméro de la recette (1-{len(mes_recettes)}) : ")) - 1
-                    if 0 <= choix_index < len(mes_recettes):
-                        recette_choisie = mes_recettes[choix_index]
-                        break
-                except: pass
-            
-            print(f"\n Traitement de : {recette_choisie['nom']}")
-            
-            # ÉTAPE 3 : Ingrédients
-            liste_ingredients = get_recipe_details(driver, recette_choisie['url'])
-            
-            # ÉTAPE 4 : Calcul
-            final_data = []
-            total_estime = 0.0
-            
-            for ing in liste_ingredients:
-                famille = identifier_famille(ing)
-                prix = 0.0
-                infos = ""
-
-                if famille == "VIANDE_ROUGE":
-                    prix = prix_marche["base_viande"] * 0.150
-                    infos = "Viande (~150g)"
-                elif famille == "VOLAILLE":
-                    prix = prix_marche["base_volaille"] * 0.150
-                    infos = "Volaille (~150g)"
-                elif famille == "POISSON":
-                    prix = prix_marche["base_viande"] * 1.2 * 0.150
-                    infos = "Poisson (Est.)"
-                elif famille == "LEGUME":
-                    prix = prix_marche["base_legume"] * 0.150
-                    infos = "Légumes frais"
-                elif famille == "FECULENT":
-                    prix = prix_marche["base_feculent"] * 0.100
-                    infos = "Riz/Pâtes (~100g)"
-                elif famille == "LAITIER":
-                    prix = prix_marche["base_laitier"] * 0.050
-                    infos = "Fromage/Beurre"
-                elif famille == "EPICERIE_SUCREE":
-                    prix = 0.20
-                    infos = "Forfait Épicerie"
-                elif famille == "CONDIMENT":
-                    prix = 0.10
-                    infos = "Forfait Sel/Huile"
-                elif famille == "AROMATE":
-                    prix = 0.30
-                    infos = "Herbes fraiches"
-                else:
-                    prix = 0.50
-                    infos = "Divers"
-
-                total_estime += prix
-                final_data.append({
-                    "Ingrédient": ing,
-                    "Famille": famille,
-                    "Type": infos,
-                    "Coût (€)": round(prix, 2)
-                })
-
-            df = pl.DataFrame(final_data)
-            print("\n", df)
-            print("="*50)
-            print(f"💰 COÛT ESTIMÉ DU REPAS ({ville}) : {total_estime:.2f} €")
-            print("="*50)
-
-    except Exception as e:
-        print(f"Erreur globale : {e}")
-
-    finally:
-        driver.quit()
-
-
-    except Exception as e:
-        print(f"Erreur : {e}")
-
-    finally:
-        input("\nEntrée pour fermer...")
-        driver.quit()
+    main()
