@@ -31,6 +31,7 @@ class ScraperEngine:
     de l'instruction 'with', garantissant la fermeture propre du driver.
     """
     def __init__(self):
+        sefl.driver = None
 
     def __enter__(self):
         """Initialise le navigateur le plus pertinent disponible sur le système."""
