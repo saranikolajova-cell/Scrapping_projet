@@ -76,7 +76,7 @@ Une fois l'environnement activé, lancez le script principal :
 ```bash
 python main.py
 ```
-# Scénario d'Exécution
+### Scénario d'Exécution
 Le programme fonctionne en mode interactif dans le terminal et requiert deux paramètres :
 
 Ville de référence : Saisissez une ville majeure (ex: Paris, Lyon, Bruxelles). Le script calibrera la tarification sur cette base.
