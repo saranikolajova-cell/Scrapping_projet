@@ -13,7 +13,7 @@ DATE : Février 2026
 
 import time
 import os
-import polars as pl  # Bibliothèque de manipulation de données (non utilisée ici mais prête pour extension)
+import pathlib
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -31,20 +31,41 @@ class ScraperEngine:
     de l'instruction 'with', garantissant la fermeture propre du driver.
     """
     def __init__(self):
-        self.driver = None
 
     def __enter__(self):
-        """Configuration et lancement du navigateur au début du bloc 'with'."""
-        options = webdriver.ChromeOptions()
-        # Masque les logs techniques inutiles de Chrome dans la console
-        options.add_argument("--log-level=3") 
-        
-        # Installe automatiquement la bonne version du driver Chrome
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=options)
+        """Initialise le navigateur le plus pertinent disponible sur le système."""
+       
+        # Tentative 1 : Google Chrome (Recommandé, via webdriver_manager)
+        try:
+            options = webdriver.ChromeOptions()
+            options.add_argument("--log-level=3") # Réduction de la verbosité des logs
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=options)
+            print("[INFO] Navigateur Google Chrome initialise avec succes.")
+           
+        except Exception:
+            print("[ATTENTION] Chrome indisponible. Tentative de repli vers un autre navigateur...")
+           
+            # Tentative 2 : Safari (Natif sous macOS)
+            try:
+                self.driver = webdriver.Safari()
+                print("[INFO] Navigateur Safari initialise avec succes.")
+               
+            except Exception:
+                # Tentative 3 : Firefox (Alternative cross-platform)
+                try:
+                    self.driver = webdriver.Firefox()
+                    print("[INFO] Navigateur Firefox initialise avec succes.")
+                   
+                except Exception as fatal_error:
+                    print("[ERREUR CRITIQUE] Aucun navigateur compatible detecte.")
+                    print("--> Action requise (macOS) : Ouvrez le terminal et tapez 'safaridriver --enable'")
+                    print("--> Action requise (Windows/Linux) : Installez Google Chrome ou Mozilla Firefox.")
+                    raise RuntimeError("Echec de l'initialisation du WebDriver.") from fatal_error
+
         self.driver.maximize_window()
         return self.driver
-
+        
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
         Méthode appelée à la fin du bloc 'with'.
@@ -100,18 +121,18 @@ class NumbeoService:
         }
 
     def get_prices(self, city):
-        print(f"[INFO] Recuperation index prix pour : {city}...")
+        print(f"[INFO] Extraction de l'index des prix pour : {city}...")
         try:
-            # Formatage de l'URL pour correspondre au format Numbeo (ex: New-York)
-            self.driver.get(f"https://www.numbeo.com/cost-of-living/in/{city.replace(' ', '-').title()}?displayCurrency=EUR")
-            
-            # Attente explicite que le tableau de données soit chargé dans le DOM
+            city_formatted = city.replace(' ', '-').title()
+            self.driver.get(f"https://www.numbeo.com/cost-of-living/in/{city_formatted}?displayCurrency=EUR")
+           
+            # Synchronisation explicite avec le DOM
             WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "data_wide_table")))
-            
+           
             rows = self.driver.find_elements(By.TAG_NAME, "tr")
             for row in rows: self._parse(row)
-        except: 
-            print("[ATTENTION] Impossible de joindre Numbeo ou ville introuvable, utilisation des prix par defaut.")
+        except:
+            print("[ATTENTION] Site inaccessible ou ville introuvable. Utilisation des tarifs par defaut.")
         return self.base_prices
 
     def _parse(self, row):
@@ -315,6 +336,21 @@ class DashboardGenerator:
         with open(path, "w", encoding="utf-8") as f: f.write(html)
         return path
 
+        
+        # --- CORRECTION CHEMIN MAC/WINDOWS (SAUVEGARDE BUREAU) ---
+        filename = f"comparatif_{dish_name.replace(' ', '_')}.html"
+       
+        desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+        # Fallback au cas où le dossier "Desktop" serait introuvable
+        if not os.path.exists(desktop_dir):
+            desktop_dir = os.path.expanduser("~")
+           
+        path = os.path.join(desktop_dir, filename)
+       
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+           
+        return path
 # =============================================================================
 # 6. POINT D'ENTRÉE PRINCIPAL
 # =============================================================================
@@ -370,11 +406,13 @@ def main():
         print("\n[INFO] Creation du rapport visuel...")
         path = DashboardGenerator.create_comparison(results, ville, plat)
         
-        print(f"[SUCCES] Termine ! Le comparatif s'ouvre dans le navigateur...")
-        driver.get(f"file:///{path}")
-        
-        # Pause finale
-        input("\nAppuyez sur Entrée pour fermer le programme...")
+        print(f"[SUCCES] Termine ! Affichage des resultats via le navigateur...")
+       
+        # Structuration de l'URI universelle (Format OS agnostique - Windows/macOS/Linux)
+        file_uri = pathlib.Path(path).as_uri()
+        driver.get(file_uri)
+       
+        input("\nMaintenez une touche pour interrompre l'execution et fermer l'instance...")
 
 if __name__ == "__main__":
     main()
