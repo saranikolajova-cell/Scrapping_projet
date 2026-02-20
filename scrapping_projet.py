@@ -260,7 +260,8 @@ class DashboardGenerator:
     
     @staticmethod
     def create_comparison(results, city, dish_name):
-        if not results: return
+        if not results: 
+            return None 
         
         # Identification de la recette la moins chère
         winner = min(results, key=lambda x: x['total'])
@@ -276,7 +277,8 @@ class DashboardGenerator:
             
             # Formatage de la liste d'ingrédients (tronquée à 6 éléments)
             ing_html = "".join([f"<li>{d['Ing']}</li>" for d in r['details'][:6]])
-            if len(r['details']) > 6: ing_html += "<li>...</li>"
+            if len(r['details']) > 6: 
+                ing_html += "<li>...</li>"
 
             # Construction de la "Carte" HTML pour une recette
             cards_html += f"""
@@ -319,35 +321,25 @@ class DashboardGenerator:
         <body>
             <h1>COMPARATEUR DE PRIX</h1>
             <div class="subtitle">Analyse pour : <strong>{dish_name.upper()}</strong> a <strong>{city.upper()}</strong></div>
-            
-            <div class="container">
-                {cards_html}
-            </div>
-
-            <div class="footer">
-                Genere automatiquement par Python - Prix bases sur Numbeo - Recettes via Marmiton
-            </div>
+            <div class="container"> {cards_html}</div>
+            <div class="footer">Genere automatiquement par Python - Prix bases sur Numbeo - Recettes via Marmiton</div>
         </body>
         </html>
         """
         
         # Sauvegarde du fichier
-        filename = f"comparatif_{dish_name.replace(' ', '_')}.html"
-        path = os.path.abspath(filename)
-        with open(path, "w", encoding="utf-8") as f: f.write(html)
-        return path
-
+        filename = f"comparatif_{dish_name.replace(' ', '_')}.html"        
+        # Localise le bureau de l'utilisateur
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         
-        # --- CORRECTION CHEMIN MAC/WINDOWS (SAUVEGARDE BUREAU) ---
-        filename = f"comparatif_{dish_name.replace(' ', '_')}.html"
+        # Vérifie si le dossier Desktop existe (parfois nommé 'Bureau' sur certains OS FR, 
+        # mais 'Desktop' reste le standard système)
+        if not os.path.exists(desktop_path):
+            path = os.path.join(os.path.expanduser("~"), filename) # Sauvegarde à la racine de l'utilisateur si pas de bureau
+        else:
+            path = os.path.join(desktop_path, filename)
        
-        desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
-        # Fallback au cas où le dossier "Desktop" serait introuvable
-        if not os.path.exists(desktop_dir):
-            desktop_dir = os.path.expanduser("~")
-           
-        path = os.path.join(desktop_dir, filename)
-       
+        # Écriture du fichier
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
            
