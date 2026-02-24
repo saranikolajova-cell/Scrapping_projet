@@ -28,7 +28,6 @@ Ce programme repose sur une architecture Orientée Objet (POO) favorisant la mod
 | :--- | :--- |
 | **selenium** | **Moteur d'Automatisation Web.** Indispensable pour piloter une instance de navigateur réelle, gérer le rendu JavaScript dynamique (lazy-loading) et interagir avec le DOM (gestion des modales RGPD). |
 | **webdriver-manager** | **Gestionnaire de Pilotes.** Détecte l'environnement OS et télécharge automatiquement le binaire compatible (ex: `chromedriver`). Élimine les erreurs de variables d'environnement (PATH) et garantit la portabilité du code. |
-| **polars** | **Traitement de Données (Extension).** Inclus pour structurer les futures évolutions analytiques du projet, offrant des performances supérieures à Pandas pour la manipulation de dataframes. |
 
 ---
 
@@ -63,7 +62,7 @@ source venv/bin/activate
 ### 4. Installation des Dépendances
 Installez les bibliothèques requises via le gestionnaire de paquets pip :
 ```bash
-pip install selenium webdriver-manager polars
+pip install selenium webdriver-manager 
 ```
 ### 5. Cas Particulier : Utilisateurs macOS avec Safari
 Si Google Chrome n'est pas installé sur votre Mac, le script basculera automatiquement sur Safari. Pour autoriser l'automatisation, vous devez exécuter cette commande une seule fois dans votre terminal système :
