@@ -1,1 +1,23 @@
+# ==========================================
+# FICHIER D'IGNORANCE GIT (.gitignore)
+# ==========================================
 
+# 1. Environnements virtuels
+venv/
+env/
+
+# 2. Cache Python et fichiers compilés
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 3. Fichiers systèmes OS (Mac/Windows)
+.DS_Store
+Thumbs.db
+
+# 4. Fichiers générés par le script (Dashboard HTML)
+comparatif_*.html
+
+# 5. Variables d'environnement / Clés secrètes (Consigne du prof)
+.env
